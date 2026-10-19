@@ -1,0 +1,60 @@
+'use strict';
+
+const { environment } = require('../config/environment');
+
+class SmsProviderNotConfiguredError extends Error {
+  constructor() {
+    super('SMS delivery is unavailable because no genuine provider is configured.');
+    this.code = 'SMS_PROVIDER_NOT_CONFIGURED';
+    this.status = 503;
+  }
+}
+
+class DisabledSmsProvider {
+  name = 'disabled';
+  async send() {
+    throw new SmsProviderNotConfiguredError();
+  }
+}
+
+class MockSmsProvider {
+  name = 'mock';
+  async send({ phone, message, reference }) {
+    console.info(`[MOCK SMS] Delivery to ${phone} (ref: ${reference || 'n/a'}): ${message}`);
+    return { providerName: 'mock', providerMessageId: `mock-sms-${Date.now()}`, deliveryStatus: 'delivered' };
+  }
+}
+
+class HttpSmsProvider {
+  constructor({ name, url, apiKey, senderId, fetchImplementation = fetch }) {
+    if (!name || !url || !apiKey || !senderId) throw new SmsProviderNotConfiguredError();
+    Object.assign(this, { name, url, apiKey, senderId, fetch: fetchImplementation });
+  }
+
+  async send({ phone, message, reference }) {
+    const response = await this.fetch(this.url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
+      body: JSON.stringify({ to: phone, senderId: this.senderId, message, reference }),
+      signal: AbortSignal.timeout(5000)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw Object.assign(new Error('SMS provider rejected the request.'), { code: 'SMS_PROVIDER_REJECTED', providerStatus: response.status });
+    const id = payload.messageId || payload.id;
+    if (!id) throw Object.assign(new Error('SMS provider did not return a message identifier.'), { code: 'SMS_PROVIDER_INVALID_RESPONSE' });
+    return { providerName: this.name, providerMessageId: String(id), deliveryStatus: 'submitted' };
+  }
+}
+
+function getSmsProvider() {
+  if (environment.providers.sms === 'mock' || environment.providers.sms === 'skip') return new MockSmsProvider();
+  if (environment.providers.sms === 'disabled') return new DisabledSmsProvider();
+  return new HttpSmsProvider({
+    name: environment.providers.sms,
+    url: environment.providers.smsUrl,
+    apiKey: environment.providers.smsApiKey,
+    senderId: environment.providers.smsSenderId
+  });
+}
+
+module.exports = { SmsProviderNotConfiguredError, DisabledSmsProvider, HttpSmsProvider, MockSmsProvider, getSmsProvider };
