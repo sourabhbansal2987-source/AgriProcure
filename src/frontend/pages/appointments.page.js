@@ -37,9 +37,10 @@ function showToken(item) {
 }
 
 async function cancelAppointment(id) {
-  const reason = window.prompt(t('cancellationReason')) || '';
-  if (reason && reason.trim().length < 5) return;
-  try { await patch(`/appointments/${id}/cancel`, { reason: reason || undefined }); window.dispatchEvent(new CustomEvent('agriprocure:toast', { detail: t('bookingCancelled') })); await loadAppointments(); }
+  const reason = window.prompt(t('cancellationReason'));
+  if (reason === null) return;
+  const clean = reason && reason.trim().length >= 3 ? reason.trim() : 'Farmer requested cancellation';
+  try { await patch(`/appointments/${id}/cancel`, { reason: clean }); window.dispatchEvent(new CustomEvent('agriprocure:toast', { detail: t('bookingCancelled') })); await loadAppointments(); }
   catch (error) { window.dispatchEvent(new CustomEvent('agriprocure:toast', { detail: error.message })); }
 }
 

@@ -43,4 +43,5 @@ export async function api(path, options = {}, retried = false) {
 
 export function post(path, body) { return api(path, { method: 'POST', body: JSON.stringify(body) }); }
 export function patch(path, body) { return api(path, { method: 'PATCH', body: JSON.stringify(body) }); }
+export function put(path, body) { return api(path, { method: 'PUT', body: JSON.stringify(body) }); }
 export async function download(path, filename) { const response=await fetch(`${API_BASE}${path}`,{headers:accessToken?{authorization:`Bearer ${accessToken}`}:{}});if(!response.ok)await parse(response);const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000); }
