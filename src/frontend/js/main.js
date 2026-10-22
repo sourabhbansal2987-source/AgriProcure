@@ -3,8 +3,8 @@ import { t, toggleLocale } from './i18n.js';
 import { authPage, wireLocationSelects } from '../pages/auth.page.js';
 import { navigation } from '../components/navigation.js';
 import { loadingState, errorState } from '../components/data-state.js';
-import { farmerDashboard } from '../pages/farmer-dashboard.page.js';
-import { officerDashboard } from '../pages/officer-dashboard.page.js';
+import { farmerDashboard, loadFarmerDashboard } from '../pages/farmer-dashboard.page.js';
+import { officerDashboard, loadOfficerDashboard } from '../pages/officer-dashboard.page.js';
 import { adminDashboard, loadAdminDashboard } from '../pages/admin-dashboard.page.js';
 import { centresPage, loadCentres } from '../pages/centres.page.js';
 import { appointmentsPage, loadAppointments } from '../pages/appointments.page.js';
@@ -50,7 +50,12 @@ function renderApplication() {
   if (active === 'centres') loadCentres(currentUser);
   if (active === 'bookings' && currentUser.role === 'farmer') loadAppointments();
   if (active === 'queue') loadQueue();
-  if (active === 'dashboard') { loadNotifications(); if (currentUser.role === 'admin') loadAdminDashboard(); }
+  if (active === 'dashboard') {
+    loadNotifications();
+    if (currentUser.role === 'farmer') loadFarmerDashboard(currentUser);
+    else if (currentUser.role === 'officer') loadOfficerDashboard(currentUser);
+    else if (currentUser.role === 'admin') loadAdminDashboard();
+  }
   if (active === 'analytics') loadAnalytics();
   if (active === 'intelligence') loadIntelligence();
   connectNotifications();
@@ -64,11 +69,48 @@ function renderAuth() {
   document.querySelectorAll('[data-auth-mode]').forEach((button) => button.addEventListener('click', () => { authMode = button.dataset.authMode; renderAuth(); }));
   wireLocationSelects(root);
   document.querySelector('[data-auth-form]')?.addEventListener('submit', submitAuth);
+  root.querySelectorAll('[data-demo-role]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const role = btn.dataset.demoRole;
+      const phoneInput = root.querySelector('input[name="phone"]');
+      const passInput = root.querySelector('input[name="password"]');
+      const demoMap = {
+        farmer: { id: '9876543210', pass: 'Demo@1234' },
+        officer: { id: '9876500001', pass: 'Demo@1234' },
+        admin: { id: '9876500002', pass: 'Demo@1234' }
+      };
+      if (demoMap[role] && phoneInput && passInput) {
+        phoneInput.value = demoMap[role].id;
+        passInput.value = demoMap[role].pass;
+        root.querySelector('[data-auth-form="login"] button[type="submit"]')?.click();
+      }
+    });
+  });
 }
 
 function clearFormErrors(form) { form.querySelectorAll('[aria-invalid="true"]').forEach((field)=>field.removeAttribute('aria-invalid'));form.querySelectorAll('[data-field-error]').forEach((node)=>{node.textContent='';}); }
 function markField(form,name,message){const field=form.elements.namedItem(name);if(!field)return;field.setAttribute('aria-invalid','true');const node=form.querySelector(`[data-field-error="${name}"]`);if(node)node.textContent=message;}
-function validateAuthForm(form){clearFormErrors(form);const values=Object.fromEntries(new FormData(form));const issues=[];for(const field of [...form.elements]){if(field.required&&!field.disabled&&!String(field.value||'').trim()){issues.push([field.name,t('required')]);}}const digits=String(values.phone||'').replace(/\D/g,'');if(values.phone&&(!/^\d{10,15}$/.test(digits)))issues.push(['phone',t('invalidPhone')]);if(form.dataset.authForm==='register'){if(String(values.fullName||'').trim().length<2)issues.push(['fullName',t('invalidName')]);const password=String(values.password||'');if(password.length<10||!/[a-z]/.test(password)||!/[A-Z]/.test(password)||!/\d/.test(password))issues.push(['password',t('passwordRules')]);}if(form.dataset.authForm==='otp'&&!/^\d{6}$/.test(String(values.otp||'')))issues.push(['otp',t('invalidOtp')]);const unique=new Map(issues);for(const[name,message]of unique)markField(form,name,message);return unique.size===0;}
+function validateAuthForm(form){
+  clearFormErrors(form);
+  const values=Object.fromEntries(new FormData(form));
+  const issues=[];
+  for(const field of [...form.elements]){
+    if(field.required&&!field.disabled&&!String(field.value||'').trim()){
+      issues.push([field.name,t('required')]);
+    }
+  }
+  if(form.dataset.authForm==='register'){
+    const digits=String(values.phone||'').replace(/\D/g,'');
+    if(values.phone&&(!/^\d{10,15}$/.test(digits)))issues.push(['phone',t('invalidPhone')]);
+    if(String(values.fullName||'').trim().length<2)issues.push(['fullName',t('invalidName')]);
+    const password=String(values.password||'');
+    if(password.length<10||!/[a-z]/.test(password)||!/[A-Z]/.test(password)||!/\d/.test(password))issues.push(['password',t('passwordRules')]);
+  }
+  if(form.dataset.authForm==='otp'&&!/^\d{6}$/.test(String(values.otp||'')))issues.push(['otp',t('invalidOtp')]);
+  const unique=new Map(issues);
+  for(const[name,message]of unique)markField(form,name,message);
+  return unique.size===0;
+}
 
 function wireCommon() {
   document.querySelectorAll('[data-language]').forEach((button) => button.addEventListener('click', toggleLocale));
@@ -84,7 +126,9 @@ async function submitAuth(event) {
   const values = Object.fromEntries(new FormData(form));
   errorNode.hidden = true;
   if(!validateAuthForm(form)){errorNode.textContent=t('fixVisibleFields');errorNode.hidden=false;form.querySelector('[aria-invalid="true"]')?.focus();return;}
-  if(values.phone)values.phone=String(values.phone).replace(/\D/g,'');
+  if(values.phone && !values.phone.includes('@') && /^\+?[\d\s-]+$/.test(values.phone)) {
+    values.phone = String(values.phone).replace(/\D/g,'');
+  }
   submit.disabled = true;
   try {
     if (form.dataset.authForm === 'login') {

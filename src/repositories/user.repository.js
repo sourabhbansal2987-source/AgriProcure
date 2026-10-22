@@ -3,14 +3,53 @@
 const { getPool } = require('../config/database');
 
 async function findUserByPhone(phone, connection = getPool()) {
+  const digits = String(phone || '').replace(/\D/g, '');
   const [rows] = await connection.execute(
     `SELECT u.user_id, u.full_name, u.phone, u.password_hash, u.role, u.account_status,
             u.phone_verified_at, u.failed_login_count, u.locked_until, u.last_login_at,
             f.farmer_id, f.farmer_code, f.village, f.district, f.state, f.preferred_language, f.preferred_centre_id
        FROM users u LEFT JOIN farmers f ON f.user_id = u.user_id WHERE u.phone = ? LIMIT 1`,
-    [phone]
+    [digits || phone]
   );
   return rows[0] || null;
+}
+
+async function findUserByIdentifier(rawIdentifier, connection = getPool()) {
+  const trimmed = String(rawIdentifier || '').trim();
+  const digits = trimmed.replace(/\D/g, '');
+
+  // 1. If 10-15 digits, look up by phone
+  if (digits.length >= 10 && digits.length <= 15) {
+    const user = await findUserByPhone(digits, connection);
+    if (user) return user;
+  }
+
+  // 2. Look up by direct phone, farmer_code, or role alias
+  const [rows] = await connection.execute(
+    `SELECT u.user_id, u.full_name, u.phone, u.password_hash, u.role, u.account_status,
+            u.phone_verified_at, u.failed_login_count, u.locked_until, u.last_login_at,
+            f.farmer_id, f.farmer_code, f.village, f.district, f.state, f.preferred_language, f.preferred_centre_id
+       FROM users u LEFT JOIN farmers f ON f.user_id = u.user_id
+      WHERE u.phone = ? OR f.farmer_code = ? OR u.role = ? OR u.phone = ? LIMIT 1`,
+    [trimmed, trimmed, trimmed.toLowerCase(), digits || trimmed]
+  );
+  if (rows[0]) return rows[0];
+
+  // 3. Demo aliases: farmer -> 9876543210, officer -> 9876500001, admin -> 9876500002
+  const demoPhoneMap = {
+    farmer: '9876543210',
+    'farmer@agriprocure.org': '9876543210',
+    officer: '9876500001',
+    'officer@agriprocure.org': '9876500001',
+    admin: '9876500002',
+    'admin@agriprocure.org': '9876500002'
+  };
+  const mappedPhone = demoPhoneMap[trimmed.toLowerCase()];
+  if (mappedPhone) {
+    return findUserByPhone(mappedPhone, connection);
+  }
+
+  return null;
 }
 
 async function findUserById(userId, connection = getPool()) {
@@ -156,7 +195,7 @@ async function insertAuthenticationEvent(event, connection = getPool()) {
 }
 
 module.exports = {
-  findUserByPhone, findUserById, insertPendingFarmer, insertOtpChallenge, updateOtpDelivery,
+  findUserByPhone, findUserById, findUserByIdentifier, insertPendingFarmer, insertOtpChallenge, updateOtpDelivery,
   findOtpChallengeForUpdate, incrementOtpAttempt, consumeOtpAndActivateUser,
   recordLoginSuccess, recordLoginFailure, insertRefreshSession, findRefreshSessionForUpdate,
   revokeRefreshSession, rotateRefreshSession, updateFarmerProfile, insertOfficer, insertAuthenticationEvent

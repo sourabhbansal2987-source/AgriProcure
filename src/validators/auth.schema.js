@@ -13,7 +13,18 @@ const registrationRequestSchema = noUnknown({
   preferredLanguage: z.enum(['en', 'hi']).default('en')
 });
 const otpVerificationSchema = noUnknown({ challengeId: z.string().uuid(), otp: z.string().regex(/^[0-9]{6}$/) });
-const loginSchema = noUnknown({ phone, password: z.string().min(1).max(128) });
+const loginSchema = z.object({
+  phone: z.preprocess((value) => {
+    if (value === undefined || value === null) return undefined;
+    const str = String(value).trim();
+    return str.includes('@') ? str : str.replace(/\D/g, '');
+  }, z.string().min(3).max(128)).optional(),
+  email: z.string().trim().min(1).max(128).optional(),
+  identifier: z.string().trim().min(1).max(128).optional(),
+  password: z.string().min(1).max(128)
+}).refine((data) => Boolean(data.phone || data.email || data.identifier), {
+  message: 'Enter your mobile number, email, or farmer ID.'
+});
 const refreshSchema = noUnknown({ refreshToken: z.string().min(40).max(500) });
 const logoutSchema = noUnknown({ refreshToken: z.string().min(40).max(500) });
 const profileUpdateSchema = noUnknown({

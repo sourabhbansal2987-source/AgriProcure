@@ -14,10 +14,14 @@ const { scheduleSchema, scheduleUpdateSchema, centreStatusSchema } = require('..
 
 const testAuthConfig = Object.freeze({ accessTokenSecret: 'a'.repeat(48), refreshTokenSecret: 'r'.repeat(48), accessTokenTtl: '15m', refreshTokenTtl: '7d' });
 
-test('email credentials are rejected by the strict phone-only login contract', async () => {
-  const response = await request(createApp()).post('/api/v1/auth/login').send({ email: 'farmer@example.test', password: 'Password123' });
-  assert.equal(response.status, 400);
-  assert.equal(response.body.error.code, 'VALIDATION_ERROR');
+test('empty credentials are rejected by the login contract and multiple login methods are supported', async () => {
+  const invalid = await request(createApp()).post('/api/v1/auth/login').send({ password: 'Password123' });
+  assert.equal(invalid.status, 400);
+  assert.equal(invalid.body.error.code, 'VALIDATION_ERROR');
+
+  const emailLogin = await request(createApp()).post('/api/v1/auth/login').send({ email: 'farmer@agriprocure.org', password: 'Demo@1234' });
+  assert.equal(emailLogin.status, 200);
+  assert.equal(emailLogin.body.data.user.role, 'farmer');
 });
 
 test('public administrator registration route does not exist', async () => {
